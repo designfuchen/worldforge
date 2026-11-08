@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WorldForge 世界工坊</title>
+  <meta name="color-scheme" content="dark" />
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <div class="app">
+    <!-- ============ TOP BAR ============ -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-logo"><i data-icon="logo"></i></span>
+        <div class="brand-text"><b>WorldForge</b><span>世界工坊</span></div>
+      </div>
+
+      <div id="statusPill" class="status-pill" data-state="unknown" title="连接状态">
+        <span class="dot"></span><span class="txt">检测中…</span>
+      </div>
+
+      <div class="gpu-chip" id="gpuChip" title="GPU">
+        <i data-icon="cpu"></i><span id="gpuName">未连接 GPU</span>
+      </div>
+
+      <div class="meters" id="meters">
+        <div class="meter" data-k="vram" title="L1: GPU 显存 (98GB GDDR7)"><span class="m-label">显存</span><span class="m-bar"><i></i></span><span class="m-val">—</span></div>
+        <div class="meter" data-k="ram" title="L2: 系统内存热备池 (176GB DDR5 Pinned RAM)"><span class="m-label">内存</span><span class="m-bar"><i></i></span><span class="m-val">—</span></div>
+        <div class="meter" data-k="shm" title="L3: /dev/shm 零延迟内存盘 (88GB 2.4GB/s)"><span class="m-label">内存盘</span><span class="m-bar"><i></i></span><span class="m-val">—</span></div>
+        <div class="meter" data-k="drive" title="L4: Google Drive 30TB 持久化云盘金库"><span class="m-label">30T云盘</span><span class="m-bar"><i></i></span><span class="m-val">—</span></div>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="cu" id="cuBox" title="Colab 计算单元余额">
+        <span class="cu-ic"><i data-icon="zap"></i></span>
+        <div class="cu-main"><b id="cuBalance">—</b><span>CU</span></div>
+        <div class="cu-rate" id="cuRate"></div>
+      </div>
+
+      <button class="btn btn-ghost btn-sm" id="btnOpenDir" title="在 Finder 中打开作品库目录">
+        <i data-icon="folder"></i><span>打开作品库目录</span>
+      </button>
+    </header>
+
+    <div id="localDown" class="local-down" hidden>
+      <i data-icon="alert"></i>
+      <span>无法连接本地服务 <code>forge.py</code>（127.0.0.1:7788）。请在终端运行 <code>python3 forge.py</code> 后刷新。</span>
+      <button class="btn btn-sm" id="btnRetryLocal">重试</button>
+    </div>
+
+    <!-- ============ LEFT SIDEBAR ============ -->
+    <aside class="col col-left" id="colLeft">
+      <!-- 云端实例 -->
+      <section class="card" id="cardInstance">
+        <header class="card-head">
+          <div class="card-title"><i data-icon="cloud"></i>云端实例</div>
+          <span class="badge" id="sessBadge">未启动</span>
+        </header>
+        <div class="card-body">
+          <div class="row-2">
+            <label class="field">
+              <span class="label">会话名</span>
+              <input class="input" id="inSession" spellcheck="false" autocomplete="off" placeholder="lyra" />
+            </label>
+            <label class="field">
+              <span class="label">GPU</span>
+              <select class="select" id="inGpu"></select>
+            </label>
+          </div>
+          <div class="sess-info" id="sessInfo"></div>
+          <div class="btn-row">
+            <button class="btn btn-primary btn-sm grow" id="btnStart"><i data-icon="power"></i><span>启动</span></button>
+            <button class="btn btn-sm grow" id="btnConnect"><i data-icon="link"></i><span>连接</span></button>
+            <button class="btn btn-danger-ghost btn-sm" id="btnStop" title="释放实例（停止计费）"><i data-icon="stop"></i><span>释放</span></button>
+          </div>
+          <div class="status-list">
+            <div class="status-row"><span class="muted"><i data-icon="link"></i>SSH 隧道</span><span class="st" id="stTunnel"><span class="dot"></span><em>—</em></span></div>
+            <div class="status-row"><span class="muted"><i data-icon="terminal"></i>远端服务</span><span class="st" id="stRemote"><span class="dot"></span><em>—</em></span></div>
+          </div>
+          <div class="idle-box">
+            <div class="idle-head">
+              <span class="label"><i data-icon="moon"></i>空闲自动释放</span>
+              <div class="seg seg-xs" id="segIdle">
+                <button data-v="0">关闭</button><button data-v="15">15</button><button data-v="30">30</button><button data-v="60">60</button>
+              </div>
+            </div>
+            <div class="idle-info" id="idleInfo"></div>
+          </div>
+          <label class="switch-row">
+            <span>任务完成自动保存到作品库</span>
+            <input type="checkbox" class="switch" id="inAutoFetch" />
+          </label>
+        </div>
+      </section>
+
+      <!-- 模型中心 (置顶方便直接选模型/加模型) -->
+      <section class="card" id="cardModels">
+        <header class="card-head">
+          <div class="card-title"><i data-icon="box"></i>模型中心</div>
+          <button class="icon-btn sm" id="btnModelsRefresh" title="刷新"><i data-icon="refresh"></i></button>
+        </header>
+        <div class="card-body">
+          <form class="deploy" id="deployForm" autocomplete="off">
+            <span class="deploy-ic"><i data-icon="hf"></i></span>
+            <input class="input" id="inDeploy" spellcheck="false" placeholder="粘贴 HF 地址或 /tree/main 子目录一键部署" />
+            <button class="btn btn-primary btn-sm" id="btnDeploy" type="submit"><i data-icon="rocket"></i></button>
+          </form>
+          <div class="deploy-hint">点击任意模型即可切换；支持 Diffusers / Safetensors / GGUF</div>
+          <div class="storage-pyramid" id="storagePyramid"></div>
+          <div class="model-list" id="modelList"></div>
+        </div>
+      </section>
+
+      <!-- 实时算力 (折叠收纳在底部，保持左侧清爽) -->
+      <details class="card metrics-drawer" id="cardMetrics">
+        <summary class="card-head">
+          <div class="card-title"><i data-icon="activity"></i>实时算力监控与显卡压测</div>
+          <span class="badge" id="metricsBadge" data-tone="muted">离线</span>
+        </summary>
+        <div class="card-body">
+          <div class="spark">
+            <div class="spark-head"><span>GPU 利用率</span><b id="sparkUtilVal">—</b></div>
+            <canvas id="sparkUtil" height="56"></canvas>
+          </div>
+          <div class="spark">
+            <div class="spark-head"><span>显存占用</span><b id="sparkVramVal">—</b></div>
+            <canvas id="sparkVram" height="56"></canvas>
+          </div>
+          <div class="stat-grid" id="statGrid">
+            <div class="stat"><i data-icon="thermo"></i><span>温度</span><b data-s="temp">—</b></div>
+            <div class="stat"><i data-icon="zap"></i><span>功耗</span><b data-s="power">—</b></div>
+            <div class="stat"><i data-icon="memory"></i><span>内存</span><b data-s="ram">—</b></div>
+            <div class="stat"><i data-icon="hdd"></i><span>磁盘</span><b data-s="disk">—</b></div>
+          </div>
+          <div class="workers" id="workers"></div>
+          <div class="bench-wrap">
+            <button class="btn btn-benchmark wide" id="btnBenchmark" type="button" title="运行 TensorCore FP16/BF16 算力、显存带宽与 PCIe 极限基准测试">
+              <i data-icon="zap"></i><span>⚡ 压测云端显卡极限</span>
+            </button>
+            <div class="bench-box" id="benchBox" hidden></div>
+          </div>
+        </div>
+      </details>
+    </aside>
+
+    <!-- ============ CENTER ============ -->
+    <main class="col-center">
+      <nav class="tabs" id="tabs" role="tablist">
+        <span class="tab-indicator" id="tabIndicator"></span>
+        <button class="tab" data-tab="image" role="tab"><i data-icon="image"></i><span>生图</span><kbd>⌘1</kbd></button>
+        <button class="tab" data-tab="video" role="tab"><i data-icon="video"></i><span>视频</span><kbd>⌘2</kbd></button>
+        <button class="tab" data-tab="world" role="tab"><i data-icon="cube"></i><span>3D 世界</span><em class="tab-new">Lyra 2</em><kbd>⌘3</kbd></button>
+        <button class="tab" data-tab="post" role="tab"><i data-icon="sliders"></i><span>后期</span><kbd>⌘4</kbd></button>
+        <button class="tab" data-tab="gallery" role="tab"><i data-icon="grid"></i><span>作品库</span><em class="tab-count" id="galleryCount"></em><kbd>⌘5</kbd></button>
+      </nav>
+
+      <div class="panels" id="panels">
+        <!-- ======== 生图 ======== -->
+        <section class="panel" data-panel="image">
+          <div class="panel-inner">
+            <div class="card composer composer-3step">
+              <!-- STEP 1: 选择生图模型 -->
+              <div class="step-block">
+                <div class="step-head">
+                  <span class="step-badge">STEP 1</span>
+                  <b>选择生图模型</b>
+                  <span class="muted">点击卡片切换生图大模型（支持 2K 旗舰生图与混合大模型）</span>
+                  <div class="spacer"></div>
+                  <button class="btn btn-xs btn-accent" type="button" id="t2iToggleAdd">
+                    <i data-icon="plus"></i><span>+ 添加生图模型</span>
+                  </button>
+                </div>
+                <div class="quick-add-box" id="t2iAddBox" hidden>
+                  <div class="quick-add-row">
+                    <span class="deploy-ic"><i data-icon="hf"></i></span>
+                    <input class="input" id="t2iAddInput" spellcheck="false" placeholder="粘贴 HuggingFace 生图模型地址，例如 black-forest-labs/FLUX.1-schnell 或 Tongyi-MAI/Z-Image-Turbo" />
+                    <button class="btn btn-primary btn-sm" type="button" id="t2iAddBtn"><i data-icon="rocket"></i><span>立即添加并选中</span></button>
+                  </div>
+                  <div class="quick-add-presets">
+                    <span class="muted">一键添加热门模型：</span>
+                    <button type="button" class="chip chip-xs" data-hf-t2i="Qwen/Qwen-Image-2.1-Turbo">Qwen-Image 2.1 Turbo (2K)</button>
+                    <button type="button" class="chip chip-xs" data-hf-t2i="Tongyi-MAI/Z-Image-Turbo">Z-Image Turbo 6B</button>
+                    <button type="button" class="chip chip-xs" data-hf-t2i="black-forest-labs/FLUX.1-schnell">FLUX.1 Schnell</button>
+                    <button type="button" class="chip chip-xs" data-hf-t2i="MiniMax-AI/MiniMax-H3-Hybrid-1.8/tree/main/1.8-hybrid">MiniMax-H3 v1.8 Hybrid</button>
+                  </div>
+                </div>
+                <div class="model-cards-grid" id="t2iModelCards" role="radiogroup" aria-label="选择生图模型"></div>
+                <select class="select" id="t2iModel" hidden></select>
+              </div>
+
+              <div class="divider"></div>
+
+              <!-- STEP 2: 输入一句话画面描述 + 🎥 专业级唯美电影摄影机 -->
+              <div class="step-block">
+                <div class="step-head">
+                  <span class="step-badge">STEP 2</span>
+                  <b>输入一句话画面描述 & 选择唯美电影摄影机</b>
+                  <span class="muted">一句话自动搭载 ARRI Alexa 65 / 徕卡夜神光学镜头，或点击下方电影级片段</span>
+                  <div class="spacer"></div>
+                  <button class="btn btn-xs btn-accent" type="button" id="t2iExpandPrompt" title="将简短提示词一键扩写为 ARRI Alexa 65 + 85mm f/1.2L 黄金逆光大师级电影提示词">
+                    <i data-icon="sparkles"></i><span>✨ 电影级扩写</span>
+                  </button>
+                  <button class="btn btn-xs btn-ghost" type="button" id="t2iDicePrompt" title="随机填入一句殿堂级电影片段提示词">
+                    <i data-icon="dice"></i><span>🎲 随机灵感</span>
+                  </button>
+                </div>
+
+                <!-- 🎥 专业级唯美电影摄影机选择器 -->
+                <div class="cinema-cam-bar">
+                  <div class="cinema-cam-label">
+                    <i data-icon="camera"></i>
+                    <span>🎥 电影摄影机</span>
+                  </div>
+                  <div class="chips cinema-cam-chips" id="t2iCinemaCam" role="radiogroup" aria-label="选择专业级唯美电影摄影机"></div>
+                </div>
+
+                <div class="prompt-wrap">
+                  <textarea class="prompt prompt-lg" id="t2iPrompt" rows="3" placeholder="输入简单描述（如：樱花树下回眸的少女），可点右上角「✨ 电影级扩写」或直接点击下方《情书》《花样年华》等电影片段…"></textarea>
+                  <div class="prompt-tools">
+                    <span class="char-count" id="t2iChars">0</span>
+                    <button class="icon-btn sm" id="t2iClear" title="清空"><i data-icon="x"></i></button>
+                  </div>
+                </div>
+                <div class="chip-row">
+                  <span class="chip-label">🎬 电影片段</span>
+                  <div class="chips" id="t2iScenes"></div>
+                </div>
+                <div class="chip-row">
+                  <span class="chip-label">🎨 视觉风格</span>
+                  <div class="chips" id="t2iStyles"></div>
+                </div>
+              </div>
+
+              <!-- STEP 3: 立即生成图片主按钮 -->
+              <div class="run-bar-hero">
+                <div class="run-meta" id="t2iMeta"></div>
+                <button class="btn-run btn-run-xl" id="t2iRun" type="button">
+                  <i data-icon="sparkles"></i><span>⚡ 立即生成图片</span><kbd>⌘↵</kbd>
+                </button>
+              </div>
+
+              <!-- Compact 画幅比例 + 折叠高级参数 -->
+              <div class="compact-bar">
+                <div class="field">
+                  <span class="label">画幅比例</span>
+                  <div class="aspects" id="t2iAspects"></div>
+                </div>
+              </div>
+
+              <details class="adv-params" id="t2iAdvWrap">
+                <summary><i data-icon="chevron"></i><span>高级参数（可选 · 默认已调优：8 步极速 2K 直出）</span></summary>
+                <div class="adv-params-body">
+                  <div class="opt-grid">
+                    <div class="field">
+                      <span class="label">连抽数量</span>
+                      <div class="stepper" id="t2iCount">
+                        <button type="button" data-d="-1"><i data-icon="minus"></i></button>
+                        <input type="number" min="1" max="8" value="1" />
+                        <button type="button" data-d="1"><i data-icon="plus"></i></button>
+                      </div>
+                    </div>
+                    <label class="field">
+                      <span class="label">推理步数</span>
+                      <input class="input" type="number" id="t2iSteps" min="1" max="100" value="8" />
+                    </label>
+                    <div class="field span-2">
+                      <span class="label">随机种子 (-1 = 每次随机)</span>
+                      <div class="input-group">
+                        <input class="input" type="number" id="t2iSeed" value="-1" />
+                        <button class="icon-btn" type="button" data-dice="t2iSeed" title="随机种子 / -1 = 每次随机"><i data-icon="dice"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field" id="t2iNegWrap">
+                    <span class="label">反向提示词（可选，不希望出现的元素）</span>
+                    <textarea class="input textarea" id="t2iNeg" rows="2" placeholder="不希望出现的内容，例如：模糊, 低清晰度, 水印, 文字错误"></textarea>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="section-head">
+              <h3>生成结果</h3>
+              <span class="muted" id="t2iResultsHint"></span>
+            </div>
+            <div class="results" id="t2iResults"></div>
+          </div>
+        </section>
+
+        <!-- ======== 视频 ======== -->
+        <section class="panel" data-panel="video">
+          <div class="panel-inner">
+            <div class="card composer composer-3step">
+              <!-- STEP 1: 选择视频模型 -->
+              <div class="step-block">
+                <div class="step-head">
+                  <span class="step-badge">STEP 1</span>
+                  <b>选择视频模型</b>
+                  <span class="muted">支持 MiniMax-H3 音视频同生、Wan 2.2、Lyra 3D 世界长片</span>
+                  <div class="spacer"></div>
+                  <button class="btn btn-xs btn-accent" type="button" id="vidToggleAdd">
+                    <i data-icon="plus"></i><span>+ 添加视频模型</span>
+                  </button>
+                </div>
+                <div class="quick-add-box" id="vidAddBox" hidden>
+                  <div class="quick-add-row">
+                    <span class="deploy-ic"><i data-icon="hf"></i></span>
+                    <input class="input" id="vidAddInput" spellcheck="false" placeholder="粘贴 HuggingFace 视频模型地址，例如 MiniMax-AI/MiniMax-H3-Hybrid-1.8/tree/main/1.8-hybrid" />
+                    <button class="btn btn-primary btn-sm" type="button" id="vidAddBtn"><i data-icon="rocket"></i><span>立即添加并选中</span></button>
+                  </div>
+                  <div class="quick-add-presets">
+                    <span class="muted">一键添加热门视频/语音模型：</span>
+                    <button type="button" class="chip chip-xs" data-hf-vid="MiniMax-AI/MiniMax-H3-Hybrid-1.8/tree/main/1.8-hybrid">MiniMax-H3 v1.8 Hybrid Turbo</button>
+                    <button type="button" class="chip chip-xs" data-hf-vid="Wan-AI/Wan2.1-T2V-14B-Diffusers">Wan 2.1 T2V 14B</button>
+                    <button type="button" class="chip chip-xs" data-hf-vid="nvidia/Lyra-2.0">NVIDIA Lyra 2.0 (3D世界)</button>
+                    <button type="button" class="chip chip-xs" data-hf-vid="BreezeBlue/Breeze-TTS-2">Breeze-TTS-2 (0显存 · 云盘常驻)</button>
+                  </div>
+                </div>
+                <div class="model-cards-grid" id="vidModelCards" role="radiogroup" aria-label="选择视频模型"></div>
+                <select class="select" id="vidModel" hidden></select>
+              </div>
+
+              <div class="divider"></div>
+
+              <!-- STEP 2: 输入一句话视频提示词（无需传图即可直接生成视频） -->
+              <div class="step-block">
+                <div class="step-head">
+                  <span class="step-badge">STEP 2</span>
+                  <b>输入一句话视频提示词 & 选择唯美电影摄影机</b>
+                  <span class="muted">无需上传图片，输入一句话描述即可直接生成电影级唯美视频！</span>
+                  <div class="spacer"></div>
+                  <button class="btn btn-xs btn-accent" type="button" id="vidExpandPrompt" title="将简短提示词一键扩写为 ARRI Alexa 65 + 85mm f/1.2L 黄金逆光大师级电影提示词">
+                    <i data-icon="sparkles"></i><span>✨ 电影级扩写</span>
+                  </button>
+                  <button class="btn btn-xs btn-ghost" type="button" id="vidDicePrompt" title="随机填入一句殿堂级电影镜头提示词">
+                    <i data-icon="dice"></i><span>🎲 随机灵感</span>
+                  </button>
+                </div>
+
+                <!-- 🎥 专业级唯美电影摄影机选择器 -->
+                <div class="cinema-cam-bar">
+                  <div class="cinema-cam-label">
+                    <i data-icon="camera"></i>
+                    <span>🎥 电影摄影机</span>
+                  </div>
+                  <div class="chips cinema-cam-chips" id="vidCinemaCam" role="radiogroup" aria-label="选择专业级唯美电影摄影机"></div>
+                </div>
+
+                <div class="prompt-wrap">
+                  <textarea class="prompt prompt-lg" id="vidPrompt" rows="3" placeholder="输入简单描述（如：海边夕阳下的女孩），可点右上角「✨ 电影级扩写」或直接点击下方《情书》《沙丘》等电影片段…"></textarea>
+                  <div class="prompt-tools">
+                    <span class="char-count" id="vidChars">0</span>
+                    <button class="icon-btn sm" id="vidClear" title="清空"><i data-icon="x"></i></button>
+                  </div>
+                </div>
+                <div class="chip-row">
+                  <span class="chip-label">🎬 电影片段</span>
+                  <div class="chips" id="vidScenes"></div>
+                </div>
+              </div>
+
+              <!-- STEP 3: 立即生成视频主按钮 -->
+              <div class="run-bar-hero">
+                <div class="run-meta" id="vidMeta"></div>
+                <button class="btn-run btn-run-xl" id="vidRun" type="button">
+                  <i data-icon="film"></i><span>🎬 立即生成视频</span><kbd>⌘↵</kbd>
+                </button>
+              </div>
+
+              <!-- 可选：搭配首帧参考图 -->
+              <div class="vid-opt-ref">
+                <div class="vid-opt-ref-info">
+                  <b><i data-icon="image"></i>可选：搭配首帧参考图</b>
+                  <span class="muted">不传图则自动根据提示词直出视频（文生视频）；传入图片则以该图为首帧驱动视频（图生视频）</span>
+                </div>
+                <div class="dropzone dz-compact" id="vidDrop" tabindex="0">
+                  <div class="dz-empty">
+                    <i data-icon="upload"></i>
+                    <span>拖入首帧图或点击上传</span>
+                    <button class="btn btn-xs" type="button" data-pick>从作品库选图</button>
+                  </div>
+                  <div class="dz-preview"></div>
+                  <input type="file" accept="image/*" hidden />
+                </div>
+              </div>
+
+              <!-- 折叠高级视频参数 -->
+              <details class="adv-params" id="vidAdvWrap">
+                <summary><i data-icon="chevron"></i><span>高级视频参数（可选 · 分辨率 / 帧数 / 步数 / 种子，默认已调优）</span></summary>
+                <div class="adv-params-body">
+                  <div class="opt-grid">
+                    <label class="field span-2">
+                      <span class="label">分辨率</span>
+                      <select class="select" id="vidRes"></select>
+                    </label>
+                    <label class="field">
+                      <span class="label">帧数</span>
+                      <input class="input" type="number" id="vidFrames" min="9" max="721" step="4" value="81" />
+                    </label>
+                    <label class="field">
+                      <span class="label">帧率 fps</span>
+                      <input class="input" type="number" id="vidFps" min="8" max="60" value="24" />
+                    </label>
+                    <label class="field">
+                      <span class="label">步数</span>
+                      <input class="input" type="number" id="vidSteps" min="1" max="100" value="8" />
+                    </label>
+                    <label class="field">
+                      <span class="label">引导强度</span>
+                      <input class="input" type="number" id="vidGuidance" min="0" max="20" step="0.5" value="1" />
+                    </label>
+                    <div class="field span-2">
+                      <span class="label">随机种子 (-1 = 每次随机)</span>
+                      <div class="input-group">
+                        <input class="input" type="number" id="vidSeed" value="-1" />
+                        <button class="icon-btn" type="button" data-dice="vidSeed" title="随机种子"><i data-icon="dice"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <span class="label">反向提示词（可选）</span>
+                    <textarea class="input textarea" id="vidNeg" rows="2" placeholder="例如：画面抖动, 变形, 闪烁, 低质量"></textarea>
+                  </div>
+                </div>
+              </details>
+            </div>
+            <div class="section-head"><h3>生成结果</h3></div>
+            <div class="results" id="vidResults"></div>
+          </div>
+        </section>
+
+        <!-- ======== 3D 世界 ======== -->
+        <section class="panel" data-panel="world">
+          <div class="panel-inner">
+            <div class="world-hero">
+              <div>
+                <h2><span class="grad-text">单张图片 → 可探索的 3D 世界</span></h2>
+                <p>NVIDIA Lyra 2.0 · 把一张图变成相机自由穿梭的世界漫游视频</p>
+              </div>
+              <span class="badge" data-tone="violet" id="lyraStatus">Lyra 2.0</span>
+            </div>
+
+            <div class="world-top">
+              <div class="dropzone dz-lg" id="worldDrop" tabindex="0">
+                <div class="dz-empty">
+                  <span class="dz-ic"><i data-icon="upload"></i></span>
+                  <b>拖入一张图片</b>
+                  <span>或点击上传 · 建议 16:9，纵深感强的场景</span>
+                  <button class="btn btn-sm" type="button" data-pick><i data-icon="grid"></i><span>从作品库选择</span></button>
+                </div>
+                <div class="dz-preview"></div>
+                <input type="file" accept="image/*" hidden />
+              </div>
+              <div class="card world-scene">
+                <label class="field">
+                  <span class="label">场景描述 <span class="muted">（中英文均可）</span></span>
+                  <textarea class="input textarea" id="worldScene" rows="3" placeholder="描述画面里的世界，例如：a floating sky castle wrapped in giant tree roots above a sea of clouds"></textarea>
+                </label>
+                <div class="chips chips-sm" id="worldScenes"></div>
+                <details class="caption-box" id="worldCapWrap">
+                  <summary><i data-icon="chevron"></i>最终提示词预览<span class="muted" id="worldCapState">自动套用官方 frozen-tableau 模板</span></summary>
+                  <div class="caption-preview" id="worldCapPreview"></div>
+                  <div class="caption-adv">
+                    <label class="switch-row tight"><span>高级：完整提示词（手动编辑）</span><input type="checkbox" class="switch" id="worldCapEdit" /></label>
+                    <textarea class="input textarea mono" id="worldCaption" rows="5" hidden></textarea>
+                  </div>
+                </details>
+              </div>
+            </div>
+
+            <div class="section-head"><h3>相机运动</h3><span class="muted" id="worldModeHint"></span></div>
+            <div class="mode-grid" id="worldModes"></div>
+
+            <div class="world-bottom">
+              <div class="card world-params" id="worldParams">
+                <div id="worldParamBody"></div>
+                <div class="divider"></div>
+                <label class="switch-row">
+                  <span class="sw-text"><b><i data-icon="zap"></i>快速模式 DMD</b><em>蒸馏加速，约快 9 倍，画质略降</em></span>
+                  <input type="checkbox" class="switch" id="worldDmd" checked />
+                </label>
+                <details class="adv">
+                  <summary><i data-icon="chevron"></i>高级参数</summary>
+                  <div class="opt-grid">
+                    <label class="field"><span class="label">步数</span><input class="input" type="number" id="worldSteps" value="50" min="1" max="100" /></label>
+                    <label class="field"><span class="label">引导强度</span><input class="input" type="number" id="worldGuidance" value="5" step="0.5" min="0" max="20" /></label>
+                    <label class="field"><span class="label">Shift</span><input class="input" type="number" id="worldShift" value="5" step="0.5" min="0" max="20" /></label>
+                    <div class="field"><span class="label">种子</span>
+                      <div class="input-group"><input class="input" type="number" id="worldSeed" value="1" /><button class="icon-btn" type="button" data-dice="worldSeed"><i data-icon="dice"></i></button></div>
+                    </div>
+                    <label class="field"><span class="label">上仰比例</span><input class="input" type="number" id="worldUpward" value="0.15" step="0.05" min="0" max="1" /></label>
+                    <label class="switch-row field-sw"><span>地面对齐</span><input type="checkbox" class="switch" id="worldGround" /></label>
+                  </div>
+                </details>
+              </div>
+
+              <div class="card estimate" id="worldEstimate">
+                <div class="est-title"><i data-icon="gauge"></i>预估</div>
+                <div class="est-big">
+                  <div><span>预计耗时</span><b id="estTime">—</b></div>
+                  <div><span>预计花费</span><b id="estCost">—</b></div>
+                </div>
+                <div class="est-rows" id="estRows"></div>
+                <button class="btn-run wide" id="worldRun"><i data-icon="cube"></i><span>生成 3D 世界</span><kbd>⌘↵</kbd></button>
+              </div>
+            </div>
+
+            <div class="tips">
+              <div class="tips-title"><i data-icon="bulb"></i>出片秘诀</div>
+              <ul>
+                <li><b>选纵深场景：</b>长廊、街道、峡谷、林间小径——有明确“往里走”的空间最出效果。</li>
+                <li><b>不要人物和动物：</b>Lyra 生成的是静止世界，活物会扭曲。</li>
+                <li><b>冻结时间：</b>描述中避免“风吹、流水、飘动”，只让相机运动。</li>
+                <li><b>官方同款节奏：</b>“一路穿梭” + 后期 8× 加速 + RIFE 补帧，就是演示视频的效果。</li>
+              </ul>
+            </div>
+
+            <div class="section-head"><h3>生成结果</h3></div>
+            <div class="results" id="worldResults"></div>
+          </div>
+        </section>
+
+        <!-- ======== 后期 ======== -->
+        <section class="panel" data-panel="post" data-local="1">
+          <div class="panel-inner">
+            <div class="post-layout">
+              <div class="card post-src">
+                <div class="post-src-head">
+                  <div class="card-title"><i data-icon="film"></i>源视频</div>
+                  <button class="btn btn-sm" id="postPick"><i data-icon="grid"></i><span>从作品库选择</span></button>
+                </div>
+                <div class="post-player" id="postPlayer">
+                  <div class="empty">
+                    <i data-icon="film"></i>
+                    <b>选择一个视频开始后期</b>
+                    <span>加速、补帧、裁剪、导出 1080p</span>
+                  </div>
+                </div>
+                <div class="post-src-meta" id="postSrcMeta"></div>
+              </div>
+
+              <div class="card post-opts">
+                <div class="field">
+                  <span class="label"><i data-icon="speed"></i>播放加速</span>
+                  <div class="seg" id="postSpeed">
+                    <button data-v="1">1×</button><button data-v="2">2×</button><button data-v="4">4×</button><button data-v="8">8×</button>
+                  </div>
+                  <span class="hint">官方演示是 8× 加速 —— Lyra 原始输出镜头很慢，加速后更有“穿梭感”</span>
+                </div>
+                <div class="field">
+                  <span class="label"><i data-icon="layers"></i>RIFE 补帧</span>
+                  <div class="seg" id="postInterp">
+                    <button data-v="1">无</button><button data-v="2">2×</button><button data-v="4">4×</button>
+                  </div>
+                  <span class="hint">加速后帧率不足时补出中间帧，画面更丝滑</span>
+                </div>
+                <div class="field">
+                  <span class="label"><i data-icon="scissors"></i>裁剪（秒）</span>
+                  <div class="trim">
+                    <div class="input-group"><input class="input" type="number" id="postTrimStart" min="0" step="0.1" value="0" placeholder="开始" /><button class="btn btn-xs" type="button" id="postSetStart" title="设为当前播放位置">当前</button></div>
+                    <span class="trim-sep">→</span>
+                    <div class="input-group"><input class="input" type="number" id="postTrimEnd" min="0" step="0.1" placeholder="结尾" /><button class="btn btn-xs" type="button" id="postSetEnd" title="设为当前播放位置">当前</button></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <span class="label"><i data-icon="maximize"></i>输出分辨率</span>
+                  <div class="seg" id="postScale">
+                    <button data-v="1080p">1080p</button><button data-v="720p">720p</button><button data-v="original">原始</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <span class="label"><i data-icon="image"></i>结尾定格图（可选）</span>
+                  <div class="hold" id="postHold">
+                    <button class="btn btn-sm" type="button" id="postHoldPick"><i data-icon="plus"></i><span>选择图片</span></button>
+                  </div>
+                </div>
+                <div class="post-est" id="postEst"></div>
+                <button class="btn-run wide" id="postRun"><i data-icon="wand"></i><span>开始处理</span><kbd>⌘↵</kbd></button>
+              </div>
+            </div>
+            <div class="section-head"><h3>处理结果</h3><span class="muted">本地 ffmpeg / RIFE 处理，不消耗 CU</span></div>
+            <div class="results" id="postResults"></div>
+          </div>
+        </section>
+
+        <!-- ======== 作品库 ======== -->
+        <section class="panel" data-panel="gallery" id="panel-gallery" data-local="1">
+          <div class="panel-inner wide">
+            <div class="gallery-hero-bar">
+              <div class="gallery-hero-left">
+                <div class="gallery-title-row">
+                  <h3>极速流光作品库</h3>
+                  <span class="stat-pill" id="galStat">加载中…</span>
+                </div>
+                <p class="gallery-sub">异步解码零卡顿 · 视频悬停 60fps 丝滑逐帧预览 · M1 Max RIFE 1080p60 实时 A/B 分屏对比</p>
+              </div>
+              <div class="gallery-hero-actions">
+                <button class="btn btn-sm btn-accent" id="galABBtn" type="button" title="打开 M1 Max 1080p60 RIFE 增强 vs Colab 832×480 原始直出分屏对比">
+                  <i data-icon="compare"></i><span>A/B 画质对比</span>
+                </button>
+                <button class="btn btn-sm btn-cinema" id="btnCinemaShowcase" type="button" title="全屏自动轮播所有 1080p60 3D 世界穿梭作品并叠加 HUD 遥测参数">
+                  <i data-icon="cinema"></i><span>一键开启影院轮播展厅</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="gallery-bar">
+              <div class="seg gal-filter-seg" id="galFilter" role="tablist" aria-label="作品分类筛选">
+                <button data-v="all" class="on">全部</button>
+                <button data-v="world3d">3D 世界穿梭</button>
+                <button data-v="enhanced">1080p60 增强</button>
+                <button data-v="image2k">2K 场景原画</button>
+                <button data-v="video">视频</button>
+                <button data-v="image">图片</button>
+                <button data-v="fav" class="fav-filter-btn">★ 收藏</button>
+              </div>
+              <div class="spacer"></div>
+              <div class="gal-sort-wrap" title="排序方式">
+                <i data-icon="sort"></i>
+                <select class="select select-sm" id="galSort" aria-label="排序方式">
+                  <option value="newest">最新创建</option>
+                  <option value="resolution">分辨率最高</option>
+                  <option value="duration">时长优先</option>
+                  <option value="fav_first">收藏优先</option>
+                </select>
+              </div>
+              <div class="search">
+                <i data-icon="search"></i>
+                <input class="input" id="galSearch" placeholder="搜索标题 / 提示词 / 标签 / 文件名…" />
+              </div>
+              <button class="icon-btn" id="galRefresh" title="刷新作品库"><i data-icon="refresh"></i></button>
+            </div>
+            <div class="masonry" id="galGrid"></div>
+          </div>
+        </section>
+
+        <!-- ======== Onboarding hero (overlays remote tabs when offline) ======== -->
+        <div class="hero" id="hero" hidden>
+          <div class="hero-art" aria-hidden="true">
+            <svg viewBox="0 0 200 200">
+              <defs>
+                <linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
+              </defs>
+              <circle cx="100" cy="100" r="78" class="orbit o1"/>
+              <ellipse cx="100" cy="100" rx="92" ry="34" class="orbit o2"/>
+              <ellipse cx="100" cy="100" rx="34" ry="92" class="orbit o3"/>
+              <path d="M100 52 141 76v48l-41 24-41-24V76l41-24Z" class="cube-f"/>
+              <path d="m59 76 41 24 41-24M100 100v48" class="cube-l"/>
+              <circle cx="178" cy="100" r="4" class="sat s1"/>
+              <circle cx="100" cy="22" r="3" class="sat s2"/>
+            </svg>
+          </div>
+          <h1>把 Colab 顶级 GPU 变成你的<span class="grad-text">创作工作站</span></h1>
+          <p class="hero-sub">RTX PRO 6000 Blackwell · 96GB 显存 —— 2K 生图、视频生成，单张图片生成可探索的 3D 世界</p>
+          <div class="steps" id="heroSteps">
+            <div class="step" data-step="1">
+              <div class="step-num"><span>1</span><i data-icon="check"></i></div>
+              <div class="step-body"><b>启动 GPU</b><span id="heroS1">在 Colab 上创建 GPU 实例</span></div>
+              <button class="btn btn-sm" id="heroStart"><i data-icon="power"></i><span>启动</span></button>
+            </div>
+            <div class="step" data-step="2">
+              <div class="step-num"><span>2</span><i data-icon="check"></i></div>
+              <div class="step-body"><b>连接</b><span id="heroS2">建立 SSH 隧道并启动远端服务</span></div>
+              <button class="btn btn-sm" id="heroConnect"><i data-icon="link"></i><span>连接</span></button>
+            </div>
+            <div class="step" data-step="3">
+              <div class="step-num"><span>3</span><i data-icon="check"></i></div>
+              <div class="step-body"><b>一键部署环境</b><span id="heroS3">安装 Qwen-Image 与 Lyra 2.0 运行环境（首次约 10–20 分钟）</span>
+                <div class="progress sm" id="heroSetupProg" hidden><i></i></div>
+              </div>
+              <button class="btn btn-sm" id="heroSetup"><i data-icon="rocket"></i><span>部署</span></button>
+            </div>
+          </div>
+          <button class="link-btn" id="heroSkip">先逛逛界面 →</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ============ RIGHT COLUMN ============ -->
+    <aside class="col col-right">
+      <!-- 紧凑当前任务状态条 -->
+      <div class="active-task-strip" id="activeTaskBanner">
+        <div class="ats-left">
+          <span class="dot" id="atsDot"></span>
+          <span class="ats-text" id="atsText">空闲待命 · 新生成的图片与视频将自动流入下方素材库</span>
+        </div>
+        <span class="count-pill" id="queueCount" title="运行中 / 总任务数">0</span>
+      </div>
+      <div class="ats-progress-wrap" id="atsProgWrap" hidden>
+        <div class="progress sm" id="atsProgBar"><i></i></div>
+      </div>
+
+      <!-- 🗂️ 统一素材库 (全部生成的图片与视频) -->
+      <section class="card qml-card" id="quickMediaLibrary">
+        <header class="card-head qml-head">
+          <div class="card-title">
+            <span>🗂️ 统一素材库 (全部生成的图片与视频)</span>
+            <span class="count-pill hot" id="qmlCount">0</span>
+          </div>
+          <div class="qml-head-actions">
+            <button class="btn btn-xs btn-ghost" type="button" id="qmlOpenFull" title="切换到中央大屏作品库视图">
+              <i data-icon="maximize"></i><span>大屏</span>
+            </button>
+            <button class="icon-btn sm" type="button" id="qmlRefresh" title="刷新素材库">
+              <i data-icon="refresh"></i>
+            </button>
+          </div>
+        </header>
+
+        <div class="qml-filter-bar">
+          <div class="seg seg-xs qml-seg" id="qmlFilter" role="tablist" aria-label="素材库分类">
+            <button type="button" data-v="all" class="on">全部</button>
+            <button type="button" data-v="image">🖼️ 图片</button>
+            <button type="button" data-v="video">🎬 视频</button>
+            <button type="button" data-v="fav">⭐ 收藏</button>
+          </div>
+        </div>
+
+        <div class="qml-grid" id="qmlGrid"></div>
+      </section>
+
+      <!-- 折叠在底部的终端日志与队列详情 -->
+      <details class="log-drawer" id="logBox">
+        <summary class="log-drawer-summary">
+          <i data-icon="terminal"></i>
+          <span>终端日志与队列详情</span>
+          <span class="muted" id="logSummaryHint">点击展开调试日志</span>
+        </summary>
+        <div class="log-drawer-body">
+          <div class="log-drawer-section">
+            <div class="log-drawer-subhead">
+              <span>任务队列记录</span>
+              <div class="seg seg-xs" id="queueFilter">
+                <button type="button" data-v="all" class="on">全部</button>
+                <button type="button" data-v="active">进行中</button>
+              </div>
+            </div>
+            <div class="queue-list" id="queueList"></div>
+          </div>
+          <div class="log-drawer-section">
+            <div class="log-drawer-subhead">
+              <span id="logTarget">实时输出日志</span>
+              <div class="log-tools">
+                <button class="icon-btn sm on" type="button" id="logFollow" title="自动滚动"><i data-icon="arrowRight"></i></button>
+                <button class="icon-btn sm" type="button" id="logCopy" title="复制日志"><i data-icon="copy"></i></button>
+                <button class="icon-btn sm" type="button" id="logClear" title="清屏"><i data-icon="trash"></i></button>
+              </div>
+            </div>
+            <div class="console" id="console"></div>
+          </div>
+        </div>
+      </details>
+    </aside>
+  </div>
+
+  <div id="overlays"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

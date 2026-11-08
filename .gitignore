@@ -1,0 +1,94 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+qwen_venv/
+
+# macOS system & app bundle artifacts
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+WorldForge.app/
+
+# WorldForge runtime & media outputs (never commit large binary media or weights)
+outputs/
+inputs/
+jobs/
+checkpoints/
+models.json
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.avi
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.zip
+*.tar
+*.tar.gz
+!web/assets/*.svg
+!web/assets/*.png
+!docs/assets/*.png
+!docs/assets/*.jpg
+!docs/assets/*.jpeg
+!docs/assets/*.gif
+
+# Credentials, tokens, and secrets (never commit!)
+*.token
+*.key
+*.pem
+rclone.conf
+.env
+.env.*
+credentials.json
+client_secret*.json
+
+# SSH control sockets, logs, and temporary scratch files
+*.sock
+*.log
+*.part
+.work/
+scratch/
+
+# IDE & Editor folders
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
