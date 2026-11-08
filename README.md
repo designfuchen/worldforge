@@ -179,14 +179,32 @@ WorldForge 的云端引擎（[`remote/`](remote/)）针对 Google Colab **G4 (`R
 - **`WorldForge.app`** 会自动在后台守护拉起本地 `:7788` 服务（`ForgeClient.ensureDaemonRunning()`），并呈现原生 SwiftUI 120Hz 暗黑毛玻璃工作台；
 - **`start.command`** 会检测本地 `:7788` 服务并以獨立窗口模式弹出工作台。
 
-#### 方式 B：终端一行命令启动
+#### 方式 B：终端一行命令启动（Colab 云端模式）
 ```bash
-git clone https://github.com/your-org/worldforge.git
+git clone https://github.com/designfuchen/worldforge.git
 cd worldforge
 open WorldForge.app   # 启动原生 SwiftUI 客户端（自动拉起后台 forge.py）
 # 或仅启动本地守护进程 + Web 工作台：
 python3 forge.py --open
 ```
+
+#### 方式 C：本地 / 局域网 **RTX 4090 (`24GB`) / RTX 5090 (`32GB`)** 直连模式（无需 Colab）
+如果你手里有 **RTX 4090 (24GB)** 或 **RTX 5090 (32GB)**（Linux / WSL2 / 局域网工作站），**完全不需要安装 `google-colab-cli`**，一行脚本即可直接跑满本地显卡：
+
+1. **在你的 4090 / 5090 机器上启动推理后端**：
+   ```bash
+   chmod +x start_local_gpu.sh
+   ./start_local_gpu.sh
+   # 等价于：python3 remote/forge_server.py --local --host 0.0.0.0 --port 17860
+   ```
+   - 自动将模型与输出目录挂载至 `~/worldforge_data`（可通过 `WORLDFORGE_ROOT=/path/to/ssd` 自定义）；
+   - **RTX 5090 (`sm_120`, 32GB)** 与 **RTX 4090 (`sm_89`, 24GB)** 自动激活 PyTorch 2.x Flash SDPA 补丁、VAE Tiling 以及 **超大容量模型智能 CPU-GPU 分块热卸载**（`FLUX.1`、`Z-Image Turbo`、`MiniMax-H3 INT8`、`Breeze-TTS-2` 满血直出；`Wan 2.1 14B`、`Qwen-Image 2.1`、`Lyra 2.0` 自动开启防 OOM 分块流式卸载）。
+2. **连接工作台**：
+   - **本机直连**：直接运行 `python3 forge.py --open`（自动探测本地 `:17860` / `:7860` 端口，**0 秒免配置即连**）；
+   - **Mac 跨局域网直连 4090/5090 主机**：在 Mac 上运行：
+     ```bash
+     python3 forge.py --gpu-url http://192.168.1.88:17860 --open
+     ```
 
 ---
 

@@ -35,7 +35,16 @@ def main():
     ap.add_argument("--port", type=int, default=config.PORT)
     ap.add_argument("--open", action="store_true", help="启动后打开浏览器")
     ap.add_argument("--no-auto-tunnel", action="store_true", help="启动时不自动连接已存在的会话")
+    ap.add_argument("--gpu-url", default=None, help="直连本地或局域网 RTX 4090 / 5090 算力端，例如 http://127.0.0.1:17860 或 http://192.168.1.88:17860")
     args = ap.parse_args()
+
+    if args.gpu_url:
+        import urllib.parse
+        u = urllib.parse.urlparse(args.gpu_url if "://" in args.gpu_url else "http://" + args.gpu_url)
+        if u.hostname:
+            os.environ["WORLDFORGE_GPU_HOST"] = u.hostname
+        if u.port:
+            os.environ["WORLDFORGE_GPU_PORT"] = str(u.port)
 
     app = App()
     app.auto_tunnel = not args.no_auto_tunnel

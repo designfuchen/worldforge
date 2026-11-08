@@ -37,13 +37,22 @@ def progress(p, stage=""):
     emit({"event": "progress", "p": round(float(p), 4), "stage": stage})
 
 
-BREEZE_CODE_DIR = Path("/content/breeze_tts")
+_WF_ROOT = Path(
+    os.environ.get("WORLDFORGE_ROOT")
+    or ("/content/forge" if (os.path.isdir("/content") and os.access("/content", os.W_OK)) else os.path.expanduser("~/worldforge_data"))
+)
+BREEZE_CODE_DIR = Path(
+    os.environ.get("WORLDFORGE_BREEZE_CODE")
+    or ("/content/breeze_tts" if (os.path.isdir("/content") and os.access("/content", os.W_OK)) else str(_WF_ROOT / "breeze_tts"))
+)
 MODEL_ID = "breeze-tts-2"
 REPO_ID = "BreezeBlue/Breeze-TTS-2"
 
 CANDIDATE_DIRS = [
     Path("/content/drive/MyDrive/WorldForge_Models/BreezeBlue/Breeze-TTS-2"),
     Path("/content/forge/drive_models/BreezeBlue/Breeze-TTS-2"),
+    _WF_ROOT / "drive_models" / "BreezeBlue" / "Breeze-TTS-2",
+    _WF_ROOT / "models" / "BreezeBlue" / "Breeze-TTS-2",
     Path("/dev/shm/worldforge_models/breeze-tts-2"),
     Path("/content/forge/models/BreezeBlue/Breeze-TTS-2"),
 ]

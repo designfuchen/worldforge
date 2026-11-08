@@ -70,10 +70,15 @@ def vram_mb() -> int:
 
 
 def find_weight_file(rel_path: str) -> str | None:
+    wf_root = os.environ.get("WORLDFORGE_ROOT") or (
+        "/content/forge" if (os.path.isdir("/content") and os.access("/content", os.W_OK)) else os.path.expanduser("~/worldforge_data")
+    )
     roots = [
         f"/dev/shm/WorldForge_Models/{args.model_id}",
         "/dev/shm/WorldForge_Models/minimax-h3-hybrid",
         "/dev/shm/EasyColab_Models/minimax-h3-hybrid",
+        f"{wf_root}/models/{args.repo}",
+        f"{wf_root}/drive_models/{args.repo}",
         f"/content/forge/models/{args.repo}",
         f"/content/drive/MyDrive/WorldForge_Models/{args.repo}",
         f"/content/drive/MyDrive/EasyColab_Models/{args.repo}",

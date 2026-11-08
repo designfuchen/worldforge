@@ -26,16 +26,36 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 
-ROOT = "/content/forge"
+
+def _resolve_root() -> str:
+    env_root = (os.environ.get("WORLDFORGE_ROOT") or "").strip()
+    if env_root:
+        return os.path.abspath(os.path.expanduser(env_root))
+    if os.path.isdir("/content") and os.access("/content", os.W_OK):
+        return "/content/forge"
+    return os.path.abspath(os.path.expanduser("~/worldforge_data"))
+
+
+IS_COLAB = os.path.isdir("/content") and os.access("/content", os.W_OK)
+ROOT = _resolve_root()
+os.environ.setdefault("WORLDFORGE_ROOT", ROOT)
+BASE_ENV_DIR = "/content" if IS_COLAB else ROOT
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUTS = f"{ROOT}/inputs"
 OUTPUTS = f"{ROOT}/outputs"
 JOBS_DIR = f"{ROOT}/jobs"
 MODELS_DIR = f"{ROOT}/models"
-SHM_MODELS_DIR = "/dev/shm/WorldForge_Models"
-DRIVE_MODELS_DIR = "/content/drive/MyDrive/WorldForge_Models"
+SHM_MODELS_DIR = (
+    "/dev/shm/WorldForge_Models"
+    if (os.path.isdir("/dev/shm") and os.access("/dev/shm", os.W_OK))
+    else f"{ROOT}/shm_models"
+)
+DRIVE_MODELS_DIR = (
+    os.environ.get("WORLDFORGE_DRIVE_DIR")
+    or ("/content/drive/MyDrive/WorldForge_Models" if IS_COLAB else f"{ROOT}/drive_models")
+)
 LOCAL_DRIVE_MODELS_DIR = f"{ROOT}/drive_models"
 LEGACY_DRIVE_DIRS = [
     "/content/drive/MyDrive/EasyColab_Models",
@@ -43,10 +63,10 @@ LEGACY_DRIVE_DIRS = [
     "/content/drive/MyDrive/Aevix_Models",
 ]
 REGISTRY = f"{ROOT}/models.json"
-LYRA_DIR = "/content/lyra/Lyra-2"
-QWEN_PY = "/content/qwen_venv/bin/python"
-BREEZE_PY = "/content/breeze_venv/bin/python"
-SYS_PY = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else sys.executable
+LYRA_DIR = os.environ.get("WORLDFORGE_LYRA_DIR") or f"{BASE_ENV_DIR}/lyra/Lyra-2"
+QWEN_PY = os.environ.get("WORLDFORGE_QWEN_PY") or f"{BASE_ENV_DIR}/qwen_venv/bin/python"
+BREEZE_PY = os.environ.get("WORLDFORGE_BREEZE_PY") or f"{BASE_ENV_DIR}/breeze_venv/bin/python"
+SYS_PY = sys.executable or ("/usr/bin/python3" if os.path.exists("/usr/bin/python3") else "python3")
 for d in (INPUTS, OUTPUTS, JOBS_DIR, MODELS_DIR, LOCAL_DRIVE_MODELS_DIR):
     os.makedirs(d, exist_ok=True)
 
@@ -1869,10 +1889,21 @@ def api_presets():
 
 
 if __name__ == "__main__":
+    import argparse
     import uvicorn
+
+    ap = argparse.ArgumentParser(description="WorldForge GPU Inference Server (Colab G4/A100 & Local RTX 4090/5090)")
+    ap.add_argument("--local", action="store_true", help="本地 RTX 4090 / 5090 直连模式（默认监听 0.0.0.0:17860 供客户端 0 秒自动识别）")
+    ap.add_argument("--host", default=None, help="监听地址（默认 127.0.0.1，--local 模式下默认 0.0.0.0）")
+    ap.add_argument("--port", type=int, default=None, help="监听端口（Colab 默认 7860，--local 默认 17860）")
+    args, _ = ap.parse_known_args()
+
+    bind_host = args.host or os.environ.get("FORGE_HOST") or ("0.0.0.0" if args.local else "127.0.0.1")
+    bind_port = args.port or int(os.environ.get("FORGE_PORT", "17860" if args.local else "7860"))
 
     setup_4tier_storage()
     _load_old_jobs()
     _load_registry()
     threading.Thread(target=_gpu_loop, daemon=True).start()
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("FORGE_PORT", "7860")), log_level="warning")
+    print(f"⚡ WorldForge GPU Server v{VERSION} 已启动: http://{bind_host}:{bind_port} (ROOT={ROOT})", flush=True)
+    uvicorn.run(app, host=bind_host, port=bind_port, log_level="warning")

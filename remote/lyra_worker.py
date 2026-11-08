@@ -106,11 +106,30 @@ try:
         model.net.enable_selective_checkpoint(model.net.sac_config, model.net.blocks)
     DTYPE = model.tensor_kwargs.get("dtype")
     DEVICE = model.tensor_kwargs.get("device")
-    model.net = model.net.to(device=DEVICE, dtype=DTYPE, non_blocking=True)
+    # Smart VRAM Tiering for RTX 4090 (24GB) & RTX 5090 (32GB) vs Colab G4 (96GB)
+    if TOTAL_VRAM_GB <= 26.5 and hasattr(model, "net") and hasattr(model.net, "blocks"):
+        # On 24GB GPUs (RTX 4090), keep first 20 DiT blocks on GPU and stream blocks[20:] via hooks
+        model.net = model.net.to(dtype=DTYPE)
+        n_b = len(model.net.blocks)
+        split_idx = min(20, max(12, n_b // 2))
+        for k_name, sub_m in model.net.named_children():
+            if k_name != "blocks":
+                sub_m.to(device=DEVICE, dtype=DTYPE, non_blocking=True)
+        for i, blk in enumerate(model.net.blocks):
+            if i < split_idx:
+                blk.to(device=DEVICE, dtype=DTYPE, non_blocking=True)
+            else:
+                blk.to(device="cpu", dtype=DTYPE)
+                blk.register_forward_pre_hook(lambda m, inp: m.to(DEVICE, non_blocking=True) or None)
+                blk.register_forward_hook(lambda m, inp, out: m.to("cpu", non_blocking=True) or None)
+        log(f"⚡ 检测到 24GB 级显卡 ({DEV_PROPS.name})，已启用 Lyra 14B 分块流式显存调度 (常驻 {split_idx}/{n_b} 层)")
+    else:
+        model.net = model.net.to(device=DEVICE, dtype=DTYPE, non_blocking=True)
     model.eval()
     log(f"Lyra 主模型就绪 ({time.time() - t0:.0f}s)，加载 DA3 / MoGe ...")
+    da3_device = "cpu" if TOTAL_VRAM_GB <= 36.0 else DEVICE
     da3_model = load_da3_model(da3_model_name=ARGS.da3_model_name, da3_model_path_custom=ARGS.da3_model_path_custom,
-                               device=DEVICE)
+                               device=da3_device)
     da3_model.eval()
     moge_model = load_moge_model(DEVICE)
     moge_model.eval()
@@ -254,9 +273,14 @@ def _prepare_image(path, H, W):
 
 def _estimate_depth_and_intrinsics(rgb_t: torch.Tensor, H: int, W: int, ground_align: bool = False):
     """Run DA3 depth + intrinsics and align inverse depth scale with MoGe."""
+    if TOTAL_VRAM_GB <= 36.0:
+        da3_model.to(DEVICE, non_blocking=True)
     image_chw01, depth_hw, K_33, mask_hw = ZG._da3_infer_depth_intrinsics_single(
         da3_model=da3_model, img_rgb_uint8=rgb_t, target_hw=(H, W)
     )
+    if TOTAL_VRAM_GB <= 36.0:
+        da3_model.cpu()
+        torch.cuda.empty_cache()
     moge_model.to(DEVICE, non_blocking=True)
     with torch.nn.attention.sdpa_kernel([torch.nn.attention.SDPBackend.MATH]):
         _, moge_depth_hw, _, moge_mask_hw = moge_infer_depth_intrinsics(

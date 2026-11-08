@@ -83,14 +83,52 @@ try:
     if hasattr(pipe, "requires_safety_checker"):
         pipe.requires_safety_checker = False
 
-    pipe.to("cuda")
+    # Estimate total parameter footprint to auto-enable CPU Offload on RTX 4090 (24GB) & RTX 5090 (32GB)
+    param_bytes = 0
+    seen_p = set()
+    comps = getattr(pipe, "components", None)
+    mod_items = comps.values() if isinstance(comps, dict) else [getattr(pipe, k, None) for k in dir(pipe)]
+    for obj in mod_items:
+        if isinstance(obj, torch.nn.Module):
+            for p_t in itertools.chain(obj.parameters(), obj.buffers()):
+                if id(p_t) not in seen_p:
+                    seen_p.add(id(p_t))
+                    param_bytes += p_t.numel() * p_t.element_size()
+    param_gb = param_bytes / (1024 ** 3)
+
+    offload_mode = None
+    # If model weights exceed 82% of GPU VRAM (e.g. 40GB Wan2.1-14B or 57GB Qwen-Image on RTX 4090 24GB / RTX 5090 32GB),
+    # automatically use model CPU offload so 4090/5090 users never hit OOM.
+    if TOTAL_VRAM_GB <= 34.0 and param_gb > (TOTAL_VRAM_GB * 0.80):
+        try:
+            pipe.enable_model_cpu_offload()
+            offload_mode = "model_cpu_offload"
+            log(f"⚡ 检测到本地显卡显存 {TOTAL_VRAM_GB:.1f}GB (模型权重 {param_gb:.1f}GB)，已自动开启智能 CPU-GPU 分块热卸载 (4090/5090 防爆显存模式)")
+        except Exception:
+            pipe.to("cuda")
+    else:
+        try:
+            pipe.to("cuda")
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            if hasattr(pipe, "enable_model_cpu_offload"):
+                pipe.enable_model_cpu_offload()
+                offload_mode = "model_cpu_offload"
+                log(f"⚡ 显存不足以全量常驻 ({TOTAL_VRAM_GB:.1f}GB VRAM)，已自动切换为 enable_model_cpu_offload()")
+            elif hasattr(pipe, "enable_sequential_cpu_offload"):
+                pipe.enable_sequential_cpu_offload()
+                offload_mode = "sequential_cpu_offload"
+                log(f"⚡ 已自动切换为 enable_sequential_cpu_offload()")
+            else:
+                raise
+
     try:
         pipe.set_progress_bar_config(disable=False)
     except Exception:
         pass
 
-    # Pre-enable VAE slicing/tiling if running on <= 32GB VRAM GPUs (L4 24GB / T4 16GB)
-    if TOTAL_VRAM_GB <= 32.0:
+    # Pre-enable VAE slicing/tiling if running on <= 34GB VRAM GPUs (RTX 5090 32GB / RTX 4090 24GB / L4 24GB / T4 16GB)
+    if TOTAL_VRAM_GB <= 34.0:
         for fn in ("enable_vae_slicing", "enable_vae_tiling"):
             if hasattr(pipe, fn):
                 try:

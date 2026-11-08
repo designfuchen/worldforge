@@ -12,9 +12,21 @@ import shutil
 import subprocess
 import sys
 
-LYRA_ROOT = "/content/lyra"
-LYRA_DIR = f"{LYRA_ROOT}/Lyra-2"
-QWEN_VENV = "/content/qwen_venv"
+def _resolve_base_dir() -> str:
+    env_root = (os.environ.get("WORLDFORGE_ROOT") or "").strip()
+    if env_root:
+        return os.path.abspath(os.path.expanduser(env_root))
+    if os.path.isdir("/content") and os.access("/content", os.W_OK):
+        return "/content"
+    d = os.path.abspath(os.path.expanduser("~/worldforge_data"))
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+BASE_DIR = _resolve_base_dir()
+LYRA_ROOT = os.environ.get("WORLDFORGE_LYRA_ROOT") or f"{BASE_DIR}/lyra"
+LYRA_DIR = os.environ.get("WORLDFORGE_LYRA_DIR") or f"{LYRA_ROOT}/Lyra-2"
+QWEN_VENV = os.environ.get("WORLDFORGE_QWEN_VENV") or f"{BASE_DIR}/qwen_venv"
 
 
 def emit(p, stage):
@@ -34,10 +46,18 @@ def py_ok(code, py="python3", cwd=None, env_extra=None):
     return subprocess.run([py, "-c", code], cwd=cwd, env=env, capture_output=True).returncode == 0
 
 
+def _create_venv(venv_dir: str):
+    if os.path.exists(f"{venv_dir}/bin/python"):
+        return
+    if shutil.which("uv"):
+        sh(f"uv venv --seed --system-site-packages {venv_dir}")
+    else:
+        sh(f"{sys.executable} -m venv --system-site-packages {venv_dir}")
+
+
 def setup_qwen(base, span):
     emit(base, "Qwen-Image：检查独立环境")
-    if not os.path.exists(f"{QWEN_VENV}/bin/python"):
-        sh(f"uv venv --seed --system-site-packages {QWEN_VENV}")
+    _create_venv(QWEN_VENV)
     if not py_ok("import diffusers, transformers; from diffusers import QwenImage21Pipeline", f"{QWEN_VENV}/bin/python"):
         emit(base + span * 0.2, "Qwen-Image：安装 diffusers(main) + transformers>=5.17")
         sh(f'{QWEN_VENV}/bin/python -m pip install -q --upgrade git+https://github.com/huggingface/diffusers.git '
@@ -112,18 +132,20 @@ def setup_lyra(base, span):
     else:
         print("Lyra 依赖已就绪，跳过", flush=True)
 
-    emit(base + span * 0.3, "Lyra 2.0：应用 Blackwell(sm_120) 补丁")
+    emit(base + span * 0.3, "Lyra 2.0：应用 Blackwell(sm_120) / Ada(sm_89 4090) 兼容补丁")
     att = f"{LYRA_DIR}/lyra_2/_src/modules/attention.py"
     code = open(att).read()
-    if "[90, 100, 120]" not in code:
-        open(att, "w").write(code.replace("if compute_cap in [90, 100] and is_half:",
-                                          "if compute_cap in [90, 100, 120] and is_half:"))
+    if "[80, 86, 89, 90, 100, 120]" not in code:
+        for old_cap in ("if compute_cap in [90, 100] and is_half:", "if compute_cap in [90, 100, 120] and is_half:"):
+            if old_cap in code:
+                code = code.replace(old_cap, "if compute_cap in [80, 86, 89, 90, 100, 120] and is_half:")
+        open(att, "w").write(code)
     wan = f"{LYRA_DIR}/lyra_2/_src/networks/wan2pt1.py"
     wcode = open(wan).read()
     te_ok = py_ok("import transformer_engine, flash_attn")
     if WAN_OLD in wcode and (not te_ok or _need_blackwell_patch()):
         open(wan, "w").write(wcode.replace(WAN_OLD, WAN_NEW))
-        print("已打补丁: wan2pt1.py → PyTorch SDPA", flush=True)
+        print("已打补丁: wan2pt1.py → PyTorch SDPA (支持 RTX 4090 / RTX 5090 / PRO 6000)", flush=True)
 
     emit(base + span * 0.4, "Lyra 2.0：下载权重（约 100GB，16 线程并发）")
     ck = f"{LYRA_DIR}/checkpoints"
@@ -147,14 +169,13 @@ def setup_lyra(base, span):
     emit(base + span, "Lyra 2.0 就绪")
 
 
-BREEZE_VENV = "/content/breeze_venv"
-BREEZE_CODE = "/content/breeze_tts"
+BREEZE_VENV = os.environ.get("WORLDFORGE_BREEZE_VENV") or f"{BASE_DIR}/breeze_venv"
+BREEZE_CODE = os.environ.get("WORLDFORGE_BREEZE_CODE") or f"{BASE_DIR}/breeze_tts"
 
 
 def setup_breeze(base, span):
     emit(base, "Breeze-TTS-2：检查独立语音推理环境")
-    if not os.path.exists(f"{BREEZE_VENV}/bin/python"):
-        sh(f"uv venv --seed --system-site-packages {BREEZE_VENV}")
+    _create_venv(BREEZE_VENV)
     if not os.path.isdir(BREEZE_CODE):
         emit(base + span * 0.2, "Breeze-TTS-2：拉取官方推理源码")
         sh(f"git clone --depth 1 https://github.com/breezeblue-ai/breeze-tts.git {BREEZE_CODE}")
@@ -170,7 +191,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--component", default="all", choices=["all", "qwen", "lyra", "breeze"])
     c = ap.parse_args().component
-    print(f"磁盘剩余: {shutil.disk_usage('/content').free / 1e9:.0f} GB", flush=True)
+    print(f"数据目录 ({BASE_DIR}) 磁盘剩余: {shutil.disk_usage(BASE_DIR).free / 1e9:.0f} GB", flush=True)
     if c == "qwen":
         setup_qwen(0.0, 1.0)
     elif c == "lyra":

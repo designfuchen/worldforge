@@ -25,10 +25,10 @@ def port_free(port):
         s.close()
 
 
-def probe_existing_forge_tunnel(port, timeout=1.5):
-    """检查指定本地端口是否已经有存活的 WorldForge 远端隧道转发。"""
+def probe_existing_forge_tunnel(port, timeout=1.5, host="127.0.0.1"):
+    """检查指定主机/端口是否已经有存活的 WorldForge 远端隧道转发或本地/局域网 4090/5090 直连服务。"""
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
         conn.request("GET", "/api/health")
         r = conn.getresponse()
         body = r.read()
@@ -55,7 +55,8 @@ class Tunnel:
         self.proc = None
         self.desired = False
         self.session = None
-        self.local_port = config.TUNNEL_PORT
+        self.local_host = (os.environ.get("WORLDFORGE_GPU_HOST") or "127.0.0.1").strip()
+        self.local_port = int(os.environ.get("WORLDFORGE_GPU_PORT") or config.TUNNEL_PORT)
         self.status = "down"            # down | connecting | up | error
         self.since = None
         self.error = None
@@ -68,17 +69,19 @@ class Tunnel:
         self._adopted = False
         self._wake = threading.Event()
         self._health_listeners = []
-        # 启动即探测本机是否已有存活隧道，做到 0ms 冷启动即连
-        if not port_free(config.TUNNEL_PORT):
-            h = probe_existing_forge_tunnel(config.TUNNEL_PORT, timeout=0.6)
-            if h:
-                self.desired = True
-                self.session = "lyra"
-                self.local_port = config.TUNNEL_PORT
-                self._adopted = True
-                self.status = "up"
-                self.since = time.time()
-                self.remote = {"status": "ok", "version": h.get("version"), "gpu": h.get("gpu"), "checked": time.time()}
+        # 启动即探测本机或局域网是否已有存活隧道或本地 4090/5090 服务 (:17860 / :7860)，做到 0ms 冷启动即连
+        for cand_port in dict.fromkeys([self.local_port, config.TUNNEL_PORT, config.REMOTE_PORT]):
+            if self.local_host != "127.0.0.1" or not port_free(cand_port):
+                h = probe_existing_forge_tunnel(cand_port, timeout=0.8, host=self.local_host)
+                if h:
+                    self.desired = True
+                    self.session = "local-gpu" if self.local_host != "127.0.0.1" or cand_port == config.REMOTE_PORT else "lyra"
+                    self.local_port = cand_port
+                    self._adopted = True
+                    self.status = "up"
+                    self.since = time.time()
+                    self.remote = {"status": "ok", "version": h.get("version"), "gpu": h.get("gpu"), "checked": time.time()}
+                    break
 
     # ---------- 公共 API ----------
     def start_threads(self):
@@ -159,10 +162,11 @@ class Tunnel:
                     pass
 
     def _spawn(self):
-        # 优先复用本机已存活的 WorldForge SSH 隧道（避免重复开启 colab ssh 触发 HTTP 429）
-        for cand in range(config.TUNNEL_PORT, config.TUNNEL_PORT + 5):
-            if not port_free(cand):
-                h = probe_existing_forge_tunnel(cand)
+        # 优先复用本机或局域网已存活的 WorldForge SSH 隧道 / 本地 4090·5090 服务（避免重复开启 colab ssh 触发 HTTP 429）
+        cand_ports = list(dict.fromkeys([self.local_port, *range(config.TUNNEL_PORT, config.TUNNEL_PORT + 5), config.REMOTE_PORT]))
+        for cand in cand_ports:
+            if self.local_host != "127.0.0.1" or not port_free(cand):
+                h = probe_existing_forge_tunnel(cand, host=self.local_host)
                 if h:
                     self.local_port = cand
                     self._adopted = True
@@ -264,9 +268,10 @@ class Tunnel:
         with self.lock:
             if not self._alive():
                 return None
+            host = getattr(self, "local_host", "127.0.0.1")
             port = self.local_port
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+            conn = http.client.HTTPConnection(host, port, timeout=timeout)
             conn.request("GET", "/api/health")
             r = conn.getresponse()
             body = r.read()
@@ -287,10 +292,26 @@ class Tunnel:
                     if self._alive():
                         self._set_status("up")
             else:
-                with self.lock:
-                    if getattr(self, "_adopted", False):
-                        self._adopted = False
-                self._set_remote(status="unreachable")
+                # 尝试自动探测本机或局域网新启动的 4090/5090 forge_server.py
+                probed = None
+                host = getattr(self, "local_host", "127.0.0.1")
+                for cp in dict.fromkeys([self.local_port, config.TUNNEL_PORT, config.REMOTE_PORT]):
+                    if host != "127.0.0.1" or not port_free(cp):
+                        probed = probe_existing_forge_tunnel(cp, timeout=1.0, host=host)
+                        if probed:
+                            with self.lock:
+                                self.local_port = cp
+                                self.desired = True
+                                self._adopted = True
+                                self._set_status("up")
+                            self._set_remote(status="ok", version=probed.get("version"), gpu=probed.get("gpu"))
+                            h = probed
+                            break
+                if not probed:
+                    with self.lock:
+                        if getattr(self, "_adopted", False):
+                            self._adopted = False
+                    self._set_remote(status="unreachable")
             for fn in list(self._health_listeners):
                 try:
                     fn(bool(h))
@@ -303,8 +324,9 @@ class Tunnel:
         with self.lock:
             if not self._alive():
                 raise RemoteUnreachable("tunnel down")
+            host = getattr(self, "local_host", "127.0.0.1")
             port = self.local_port
-        return http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+        return http.client.HTTPConnection(host, port, timeout=timeout)
 
     def request(self, method, path, body=None, headers=None, timeout=60):
         """简单请求：返回 (status, headers_dict, body_bytes)。path 形如 /api/jobs。"""
