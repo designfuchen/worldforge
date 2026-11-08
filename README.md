@@ -15,7 +15,7 @@
 [![PCIe Gen5 DMA](https://img.shields.io/badge/VRAM%E2%86%94DDR5_Swap-Pinned_DMA_%3C1.5s-F59E0B?style=flat-square)](remote/forge_server.py)
 
 <p align="center">
-  <img src="docs/assets/viral_cover_banner.jpg" width="100%" alt="WorldForge — 我把 Colab 打造成了一个原生 Mac 电影工作台，完全发挥 Gemini Ultra 的所有性能" />
+  <img src="docs/assets/sub2_cover_1.png" width="100%" alt="WorldForge — 我把 Colab 打造成了一个原生 Mac 电影工作台，完全发挥 Gemini Ultra 的所有性能" />
 </p>
 
 [**📖 保姆级教程：我把 Colab 打造成了一个工作台**](TUTORIAL_ZH.md) · [**1 分钟极速上手**](#-1-分钟极速上手-1-minute-quickstart) · [**为什么比 EasyColab 强 100 倍**](#-为什么选-worldforgeworldforge-vs-easycolab-全维度对比) · [**原生 SwiftUI 零卡顿架构**](#-原生-swiftui--appkit-零卡顿工作站架构-macos_app) · [**Blackwell 极限压榨与 PCIe DMA 热交换**](#-云端-blackwell-sm_120-极限压榨与-pcie-50-dma-热交换) · [**Lyra 2.0「一直在穿梭」核心秘籍**](#-核心秘籍如何跑出-nvidia-官方级一直在穿梭的-lyra-20-长镜头) · [**API 契约**](docs/API.md)
